@@ -446,7 +446,7 @@
       if (e.code === 'auth/email-already-in-use')
         errEl.textContent = 'Este CPF já possui cadastro. Faça login.';
       else
-        errEl.textContent = 'Erro ao criar conta. Tente novamente.';
+        errEl.textContent = 'Erro: ' + (e.code || e.message);
     }
   }
 
