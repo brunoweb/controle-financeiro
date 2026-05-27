@@ -408,7 +408,49 @@
 <div class="toast" id="toast"></div>
 
 <script>
-  const STORAGE_KEY = '@controle_financeiro:transactions';
+  const STORAGE_KEY = 'controleFinanceiroTransactions';
+
+  // Armazenamento robusto com fallback em memória
+  let _memoryStore = null;
+
+  function storageAvailable() {
+    try {
+      const test = '__cf_test__';
+      localStorage.setItem(test, '1');
+      localStorage.removeItem(test);
+      return true;
+    } catch(e) {
+      return false;
+    }
+  }
+
+  const useStorage = storageAvailable();
+
+  function getTransactions() {
+    try {
+      if (!useStorage) return _memoryStore ? [..._memoryStore] : [];
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch(e) {
+      console.error('Erro ao ler transações:', e);
+      return [];
+    }
+  }
+
+  function saveTransactions(list) {
+    try {
+      if (!useStorage) { _memoryStore = list; return; }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      // Verifica se foi salvo corretamente
+      const check = localStorage.getItem(STORAGE_KEY);
+      if (!check) throw new Error('Dado não persistiu');
+    } catch(e) {
+      console.error('Erro ao salvar:', e);
+      showToast('⚠️ Erro ao salvar — verifique configurações do navegador');
+    }
+  }
 
   let currentType = 'income';
   let currentYear = new Date().getFullYear();
@@ -424,16 +466,6 @@
     'Moradia': '🏠', 'Saúde': '❤️', 'Lazer': '🎮',
     'Educação': '📚', 'Outros': '📦'
   };
-
-  function getTransactions() {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-    } catch { return []; }
-  }
-
-  function saveTransactions(list) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-  }
 
   function formatMoney(value) {
     return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
