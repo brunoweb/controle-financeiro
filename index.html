@@ -407,49 +407,54 @@
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
+<!-- LOADING -->
+<div id="loadingOverlay" style="position:fixed;inset:0;background:#f1f5f9;display:flex;align-items:center;justify-content:center;z-index:999;flex-direction:column;gap:12px;">
+  <div style="font-size:40px;">💰</div>
+  <div style="font-size:15px;color:#6b7280;font-weight:500;">Conectando ao banco de dados...</div>
+</div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
 <script>
-  const STORAGE_KEY = 'controleFinanceiroTransactions';
+  // ── Firebase config ──────────────────────────────
+  const firebaseConfig = {
+    apiKey: "AIzaSyD8P_B2oLnZ8hW6lxk0aI_kGLTTy9suZX8",
+    authDomain: "controle-financeiro-51e82.firebaseapp.com",
+    projectId: "controle-financeiro-51e82",
+    storageBucket: "controle-financeiro-51e82.firebasestorage.app",
+    messagingSenderId: "488968124645",
+    appId: "1:488968124645:web:76ecb2ce365b8879207c0c"
+  };
 
-  // Armazenamento robusto com fallback em memória
-  let _memoryStore = null;
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
 
-  function storageAvailable() {
-    try {
-      const test = '__cf_test__';
-      localStorage.setItem(test, '1');
-      localStorage.removeItem(test);
-      return true;
-    } catch(e) {
-      return false;
-    }
+  // Cache local atualizado pelo listener em tempo real
+  let allTransactions = [];
+
+  // Listener em tempo real — atualiza em TODOS os navegadores automaticamente
+  db.collection('transactions')
+    .orderBy('createdAt', 'desc')
+    .onSnapshot(snapshot => {
+      allTransactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      document.getElementById('loadingOverlay').style.display = 'none';
+      render();
+    }, err => {
+      console.error('Firestore:', err);
+      document.getElementById('loadingOverlay').style.display = 'none';
+      showToast('⚠️ Erro de conexão — verifique sua internet');
+    });
+
+  function getTransactions() { return allTransactions; }
+
+  async function dbAdd(transaction) {
+    await db.collection('transactions').add(transaction);
   }
 
-  const useStorage = storageAvailable();
-
-  function getTransactions() {
-    try {
-      if (!useStorage) return _memoryStore ? [..._memoryStore] : [];
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch(e) {
-      console.error('Erro ao ler transações:', e);
-      return [];
-    }
-  }
-
-  function saveTransactions(list) {
-    try {
-      if (!useStorage) { _memoryStore = list; return; }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-      // Verifica se foi salvo corretamente
-      const check = localStorage.getItem(STORAGE_KEY);
-      if (!check) throw new Error('Dado não persistiu');
-    } catch(e) {
-      console.error('Erro ao salvar:', e);
-      showToast('⚠️ Erro ao salvar — verifique configurações do navegador');
-    }
+  async function dbDelete(id) {
+    await db.collection('transactions').doc(id).delete();
   }
 
   let currentType = 'income';
@@ -581,7 +586,7 @@
     }
   }
 
-  function saveTransaction() {
+  async function saveTransaction() {
     const desc = document.getElementById('desc').value.trim();
     const amount = parseFloat(document.getElementById('amount').value);
     const category = document.getElementById('category').value;
@@ -592,7 +597,6 @@
     if (!date) { showToast('Informe a data'); return; }
 
     const transaction = {
-      id: Date.now().toString(),
       type: currentType,
       description: desc,
       amount: amount,
@@ -601,27 +605,31 @@
       createdAt: new Date().toISOString()
     };
 
-    const list = getTransactions();
-    list.unshift(transaction);
-    saveTransactions(list);
-
     closeModal();
-    render();
-    showToast(currentType === 'income' ? '✅ Receita adicionada!' : '✅ Despesa adicionada!');
 
-    // Jump to the transaction's month
+    // Navegar para o mês do lançamento
     const d = new Date(date + 'T00:00:00');
     currentMonth = d.getMonth();
     currentYear = d.getFullYear();
-    render();
+
+    try {
+      await dbAdd(transaction);
+      showToast(currentType === 'income' ? '✅ Receita adicionada!' : '✅ Despesa adicionada!');
+    } catch(e) {
+      console.error(e);
+      showToast('⚠️ Erro ao salvar — tente novamente');
+    }
   }
 
-  function deleteTransaction(id) {
+  async function deleteTransaction(id) {
     if (!confirm('Excluir este lançamento?')) return;
-    const list = getTransactions().filter(t => t.id !== id);
-    saveTransactions(list);
-    render();
-    showToast('🗑️ Lançamento excluído');
+    try {
+      await dbDelete(id);
+      showToast('🗑️ Lançamento excluído');
+    } catch(e) {
+      console.error(e);
+      showToast('⚠️ Erro ao excluir');
+    }
   }
 
   function showToast(msg) {
